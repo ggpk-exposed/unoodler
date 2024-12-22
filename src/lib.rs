@@ -4,7 +4,12 @@ use worker::*;
 #[event(fetch)]
 async fn fetch(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
-    handler(req.query()?, req.method()).await
+    handler(
+        req.query()?,
+        req.method(),
+        req.headers().get("accept-encoding")?,
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -23,6 +28,7 @@ async fn handler(
         extracted,
     }: Params,
     method: Method,
+    accept_encoding: Option<String>,
 ) -> Result<Response> {
     if !(url.starts_with("https://patch.poecdn.com/")
         || url.starts_with("https://patch-poe2.poecdn.com/"))
@@ -54,7 +60,7 @@ async fn handler(
         ));
     }
 
-    let headers = copy_headers(&response);
+    let headers = copy_headers(&response, accept_encoding);
 
     let mut result = vec![0; extracted];
     match oozextract::Extractor::new()
@@ -77,10 +83,11 @@ async fn head(url: &String) -> Result<Headers> {
             .send()
             .await
             .map_err(|e| Error::Internal(format!("Upstream error {}", e).into()))?,
+        None,
     ))
 }
 
-fn copy_headers(response: &reqwest::Response) -> Headers {
+fn copy_headers(response: &reqwest::Response, accept_encoding: Option<String>) -> Headers {
     let mut headers = Headers::new();
     for header in ["last-modified", "etag", "cache-control", "expires", "date"] {
         response
@@ -88,6 +95,16 @@ fn copy_headers(response: &reqwest::Response) -> Headers {
             .get(header)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| headers.set(header, v).ok());
+    }
+
+    // both the incoming accept-encoding header and the actual encoding of the outgoing file are modified by cloudflare.
+    // just need to add the incoming header to our output headers to enable cf to compress the data
+    // https://community.cloudflare.com/t/worker-doesnt-return-gzip-brotli-compressed-data/337644/3
+    if let Some(encoding) = accept_encoding
+        .as_ref()
+        .and_then(|v| v.split(',').map(str::trim).next())
+    {
+        headers.set("content-encoding", encoding).ok();
     }
     headers
 }
