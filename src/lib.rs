@@ -4,12 +4,7 @@ use worker::*;
 #[event(fetch)]
 async fn fetch(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
-    handler(
-        req.query()?,
-        req.method(),
-        req.headers().get("if-none-match")?,
-    )
-    .await
+    handler(req.query()?, req.method()).await
 }
 
 #[derive(Deserialize)]
@@ -28,26 +23,11 @@ async fn handler(
         extracted,
     }: Params,
     method: Method,
-    if_none_match: Option<String>,
 ) -> Result<Response> {
     if !(url.starts_with("https://patch.poecdn.com/")
         || url.starts_with("https://patch-poe2.poecdn.com/"))
     {
         return Response::error(format!("host not recognized: {}", url), 400);
-    }
-
-    if let Some(matches) = if_none_match.as_ref().and_then(parse_etags) {
-        let headers = head(&url).await?;
-        if let Some(etag) = headers.get("ETag")?.as_ref().and_then(parse_etags) {
-            for i in etag {
-                if matches.contains(&i) {
-                    return Ok(Response::builder()
-                        .with_headers(headers)
-                        .with_status(304)
-                        .empty());
-                }
-            }
-        }
     }
 
     if method == Method::Head {
@@ -87,17 +67,6 @@ async fn handler(
         Err(e) => Err(Error::Internal(
             format!("Decompression error: {}", e).into(),
         )),
-    }
-}
-
-fn parse_etags(m: &String) -> Option<Vec<&str>> {
-    // get the contents of each opaque-tag, assuming the header follows
-    // https://www.rfc-editor.org/rfc/rfc7232#appendix-C
-    let etags = m.split('"').skip(1).step_by(2).collect::<Vec<_>>();
-    if etags.is_empty() {
-        None
-    } else {
-        Some(etags)
     }
 }
 
