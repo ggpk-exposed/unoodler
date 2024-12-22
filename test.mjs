@@ -1,21 +1,31 @@
-const url = "https://patch.poecdn.com/3.25.3.4/Bundles2/Metadata/Shrines.bundle.bin";
+const url = "https://patch.poecdn.com/3.25.3.4/Bundles2/Audio/Dialogue.bundle.bin";
 const response = await fetch(url);
-if (response.statusCode != 200) {
-  console.log(response.statusCode);
+if (response.statusCode !== 200) {
+    console.log(response.statusCode);
 }
 
 const dataview = new DataView(await response.arrayBuffer());
 const size = dataview.getInt32(0, true);
 const granularity = dataview.getInt32(40, true);
-const count = Math.ceil(size/granularity);
+const count = Math.ceil(size / granularity);
 const first = dataview.getInt32(60, true);
 
 console.log("expected 5012 actual", size);
 console.log("compressed size", dataview.getInt32(4, true));
 console.log("head size", dataview.getInt32(8, true));
+console.log("granularity", granularity.toString(16));
 console.log("block count", count);
 console.log("first block size", first);
-console.log(`?url=${encodeURIComponent(url)}&offset=${60+4*count}&compressed=${first}&extracted=${size}`);
+console.log(`?url=${encodeURIComponent(url)}&offset=${60 + 4 * count}&compressed=${first}&extracted=${size}`);
+
+let remaining = size;
+let offset = 60 + 4 * count;
+for (let i = 0; i < count; i++) {
+    const size = dataview.getInt32(60 + i * 4, true);
+    console.log('offset', offset, 'size', size, 'remaining', remaining);
+    offset += size;
+    remaining -= granularity
+}
 
 //uint32 uncompressed_size;             0-3
 //uint32 total_payload_size;            4-7

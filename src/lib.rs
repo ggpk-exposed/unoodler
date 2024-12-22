@@ -18,6 +18,8 @@ struct Params {
     offset: usize,
     compressed: usize,
     extracted: usize,
+    #[serde(default)]
+    raw: bool,
 }
 
 async fn handler(
@@ -26,6 +28,7 @@ async fn handler(
         offset,
         compressed,
         extracted,
+        raw,
     }: Params,
     method: Method,
     accept_encoding: Option<String>,
@@ -55,12 +58,20 @@ async fn handler(
     if !content_range.is_some_and(|r| {
         r.starts_with(format!("bytes {}-{}", offset, offset + compressed - 1).as_str())
     }) {
-        return Err(Error::Internal(
-            format!("range header ignored: {:?}", content_range).into(),
-        ));
+        return Response::error(format!("range header ignored: {:?}", content_range), 500);
     }
 
     let headers = copy_headers(&response, accept_encoding);
+
+    if raw {
+        return ResponseBuilder::new().with_headers(headers).from_bytes(
+            response
+                .bytes()
+                .await
+                .map_err(|e| Error::Internal(format!("Download error {}", e).into()))?
+                .into(),
+        );
+    }
 
     let mut result = vec![0; extracted];
     match oozextract::Extractor::new()
@@ -70,9 +81,7 @@ async fn handler(
         Ok(_) => ResponseBuilder::new()
             .with_headers(headers)
             .from_bytes(result),
-        Err(e) => Err(Error::Internal(
-            format!("Decompression error: {}", e).into(),
-        )),
+        Err(e) => Response::error(format!("Decompression error: {}", e), 500),
     }
 }
 
