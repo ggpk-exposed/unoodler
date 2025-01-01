@@ -129,7 +129,7 @@ async fn handler(
             .read_from_stream(
                 &mut input,
                 remainder,
-                output.get_mut(i..i + extracted).unwrap(),
+                output.get_mut(i..i + extracted).unwrap_or_default(),
             )
             .await
         {
