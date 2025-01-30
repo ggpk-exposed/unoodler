@@ -17,6 +17,6 @@ crate-type = ["cdylib"]
 [dependencies]
 worker = { version = "0.5.0" }
 console_error_panic_hook = { version = "0.1.1" }
-reqwest = { version = "0.12.9", features = ["stream"] }
+reqwest = { version = "0.12.9" }
 oozextract = { version = "0.5.0", features = ["async", "verbose_errors"] }
 serde = { version = "1.0.216", features = ["derive"] }

@@ -110,32 +110,23 @@ async fn handler(
 
     let headers = copy_headers(&response, accept_encoding);
 
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| Error::Internal(format!("Download error {}", e).into()))?;
+
     if raw {
-        return ResponseBuilder::new().with_headers(headers).from_bytes(
-            response
-                .bytes()
-                .await
-                .map_err(|e| Error::Internal(format!("Download error {}", e).into()))?
-                .into(),
-        );
+        return ResponseBuilder::new()
+            .with_headers(headers)
+            .from_bytes(bytes.into());
     }
 
-    let mut input = response.bytes_stream();
     let mut output = vec![0; out_size];
     let mut i = 0;
-    let mut remainder = None;
     for extracted in blocks {
-        match oozextract::Extractor::new()
-            .read_from_stream(
-                &mut input,
-                remainder,
-                output.get_mut(i..i + extracted).unwrap_or_default(),
-            )
-            .await
-        {
-            Ok((_, r)) => remainder = r,
-            Err(e) => return Response::error(format!("Decompression error: {}", e), 500),
-        }
+        oozextract::Extractor::new()
+            .read_from_slice(&bytes, output.get_mut(i..i + extracted).unwrap_or_default())
+            .map_err(|e| Error::Internal(format!("Download error {}", e).into()))?;
         i += extracted;
     }
 
