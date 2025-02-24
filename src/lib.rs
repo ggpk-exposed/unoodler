@@ -89,9 +89,10 @@ async fn handler(
         _ => return Response::error("missing parameters", 400),
     };
 
-    let response = get_data(url, start, end)
-        .await
-        .map_err(|e| Error::Internal(format!("Upstream error {}", e).into()))?;
+    let response = match get_data(url.as_str(), start, end).await {
+        Ok(data) => data,
+        Err(e) => return Response::error(format!("Upstream error {}", e), 500),
+    };
 
     let content_range = response
         .headers()
@@ -110,10 +111,10 @@ async fn handler(
 
     let headers = copy_headers(&response, accept_encoding);
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| Error::Internal(format!("Download error {}", e).into()))?;
+    let bytes = match response.bytes().await {
+        Ok(bytes) => bytes,
+        Err(e) => return Response::error(format!("Download error {}", e), 500),
+    };
 
     if raw {
         return ResponseBuilder::new()
@@ -124,9 +125,17 @@ async fn handler(
     let mut output = vec![0; out_size];
     let mut i = 0;
     for extracted in blocks {
-        oozextract::Extractor::new()
+        if let Err(e) = oozextract::Extractor::new()
             .read_from_slice(&bytes, output.get_mut(i..i + extracted).unwrap_or_default())
-            .map_err(|e| Error::Internal(format!("Download error {}", e).into()))?;
+        {
+            return Response::error(
+                format!(
+                    "Error extracting bytes {}-{} from {}: {}",
+                    start, end, url, e
+                ),
+                500,
+            );
+        }
         i += extracted;
     }
 
@@ -141,7 +150,7 @@ async fn head(url: &String) -> Result<Headers> {
             .head(url)
             .send()
             .await
-            .map_err(|e| Error::Internal(format!("Upstream error {}", e).into()))?,
+            .map_err(|e| Error::RustError(format!("Upstream error {}", e)))?,
         None,
     ))
 }
@@ -168,7 +177,7 @@ fn copy_headers(response: &reqwest::Response, accept_encoding: Option<String>) -
     headers
 }
 
-async fn get_data(url: String, start: usize, end: usize) -> reqwest::Result<reqwest::Response> {
+async fn get_data(url: &str, start: usize, end: usize) -> reqwest::Result<reqwest::Response> {
     Ok(reqwest::Client::builder()
         .build()?
         .get(url)
