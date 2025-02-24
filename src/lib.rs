@@ -75,7 +75,7 @@ async fn handler(
             }
             end = Some(offset + compressed);
             out_size += extracted;
-            Ok(extracted)
+            Ok((compressed, extracted))
         })
         .collect();
 
@@ -111,7 +111,7 @@ async fn handler(
 
     let headers = copy_headers(&response, accept_encoding);
 
-    let bytes = match response.bytes().await {
+    let mut bytes = match response.bytes().await {
         Ok(bytes) => bytes,
         Err(e) => return Response::error(format!("Download error {}", e), 500),
     };
@@ -124,9 +124,10 @@ async fn handler(
 
     let mut output = vec![0; out_size];
     let mut i = 0;
-    for extracted in blocks {
+    for (compressed, extracted) in blocks {
+        let current = bytes.split_to(compressed);
         if let Err(e) = oozextract::Extractor::new()
-            .read_from_slice(&bytes, output.get_mut(i..i + extracted).unwrap_or_default())
+            .read_from_slice(current.as_ref(), output.get_mut(i..i + extracted).unwrap_or_default())
         {
             return Response::error(
                 format!(
